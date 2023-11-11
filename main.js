@@ -1,48 +1,61 @@
-title = "Saber Beats";
+title = "Bullet Beats";
 
 description = `
- [Tap]to Slash
+ [Tap]to Shoot
 `;
 
 characters = [
-`
-ll
-ll
-ll
-ll
-ll
-ll
-ll
-ll
-ll
-ll
+      `
+  L  L
+  ll ll
+  LwwwL
+cbLwL
+ ll ll
+   L L   
+`,
+      `
+ L  L
+ll ll
+LwwwL
+  Lwlbc
+  ll ll
+  L L   
 `,
 
     `
-    bc
-   bbcc
-  bbwcwc
-  bbwcwc
-  bccccL
-   c  b
-`
+  bc
+ bbcc
+bbwcwc
+bbwcwc
+bccccL
+ c  b
+`,
+
+    `
+   b  
+  cb  
+bby c
+ c ybb
+  bc
+  b
+` 
 ];
 
 const G = {
     WIDTH: 100,
     HEIGHT: 150,
     PLAYER_FIRE_RATE: 60,
-    PLAYER_SABER_OFFSET: 3,
+    PLAYER_GUN_OFFSET: 3,
     STAR_SPEED_MIN: 0.5,
     STAR_SPEED_MAX: 1.0,
+    PROJECTILE_SPEED: 1,
     ENEMY_SPEED: 0.5,
     ENEMY_GNERATE_SPEED: 100,
-    LASER_SPEED: 1,
     ENEMY_FIRE_RATE: 60
 };
 
 options = {
-    theme: "dark",
+    theme: "pixel",
     seed: 10,
     isCapturing: true,
     isCapturingGameCanvasOnly: true,
@@ -104,24 +117,39 @@ options = {
     */
     let projectiles;
 
-/**
- * @param {number} x
- * @param {number} y
-**/
+
 
 let select;
 let side;
 let direction;
 let s;
-let laser;
-let score;
+
 // The game loop function
 function update() {
     if (input.isJustPressed) {
         console.log("x:", input.pos.x, "y:", input.pos.y);
     }
 	if (!ticks) {
-		stars = times(20, () => {
+        player = {
+            pos: vec(G.WIDTH * 0.5, G.HEIGHT * 0.5),
+            firingCooldown: G.PLAYER_FIRE_RATE,
+            isFiring: false,
+            healthRemain: 6
+        };
+
+        enemies = [];
+        projectiles = [];
+        
+        select = false;
+        laser = false;
+        s =0;
+        direction = [];
+        direction[0] = vec(rnd(0, G.WIDTH), 0);//North
+        direction[1] = vec(rnd(0, G.WIDTH), G.HEIGHT);//South
+        direction[2] = vec(0, rnd(0, G.HEIGHT));//West
+        direction[3] = vec(G.WIDTH, rnd(0, G.HEIGHT));//East
+
+        stars = times(20, () => {
             const posX = rnd(0, G.WIDTH);
             const posY = rnd(0, G.HEIGHT);
             return {
@@ -129,19 +157,8 @@ function update() {
                 speed: rnd(G.STAR_SPEED_MIN, G.STAR_SPEED_MAX)
             };
         });
+    }
 
-        enemies = [];
-        projectiles = [];
-
-        select = false;
-        laser = false;
-        s=0;
-        direction = [];
-        direction[0] = vec(rnd(0, G.WIDTH), 0); //North
-        direction[1] = vec(rnd(0, G.WIDTH), G.HEIGHT); //South
-        direction[2] = vec(0, rnd(0, G.HEIGHT)); //West
-        direction[3] = vec(G.WIDTH, rnd(0, G.HEIGHT)); //East
-	}
     stars.forEach((s) => {
         s.pos.y += s.speed;
         s.pos.wrap(0, G.WIDTH, 0, G.HEIGHT);
@@ -150,37 +167,29 @@ function update() {
         box(s.pos, 1);
     });
 
-    player = {
-        pos: vec(G.WIDTH * 0.5, G.HEIGHT * 0.5),
-        firingCooldown: G.PLAYER_FIRE_RATE,
-        isFiring: false,
-        healthRemain: 8
-    };
-        player.pos = vec(input.pos.x, input.pos.y);
-        //player.pos.clamp(0, G.WIDTH, G.HEIGHT);
-        color("cyan");
-        //box(player.pos, 4)
-        char("a", player.pos);
+    //ticks
+    //player
+    //start to count down CD
+    if (player.firingCooldown > 0) {
+        player.firingCooldown--;
+    }
+    // End Game
+    if (player.healthRemain <= 0) {
+        end("You Died");
+    }
 
-        if (player.firingCooldown > 0) {
-            player.firingCooldown--;
-        }
-        // End Game
-        if (player.healthRemain <= 0) {
-            end("You Died");
-        }
-    
-    
-        if (!select && input.isJustPressed && player.firingCooldown == 0) {
-            //refresh cooldown
-            player.firingCooldown = G.PLAYER_FIRE_RATE;
-            projectiles.push({
-                pos: vec(player.pos.x, player.pos.y),
-                angle: player.pos.angleTo(input.pos),
-                rotation: rnd()
-            });
-        }
-    
+
+    if (!select && input.isJustPressed && player.firingCooldown == 0) {
+        //refresh cooldown
+        player.firingCooldown = G.PLAYER_FIRE_RATE;
+        projectiles.push({
+            pos: vec(player.pos.x, player.pos.y),
+            angle: player.pos.angleTo(input.pos),
+            rotation: rnd()
+        });
+    }
+
+
     //health bar
     color("light_red");
     rect(player.pos.x - 3, player.pos.y - 6, 1 * 6, 1);
@@ -199,7 +208,6 @@ function update() {
     } else {
         char("a", player.pos);
     }
-
     //create enemy
     G.ENEMY_SPEED = rnd(0.1, 0.6);
     G.ENEMY_GNERATE_SPEED--;
@@ -218,10 +226,6 @@ function update() {
         if(s>=15){
             console.log("pushed")
             s=0;
-            laserWalls.push({
-                pos: vec(theD),
-                angle: theD.angleTo(player.pos)
-            })
         }
     }
 
@@ -251,34 +255,36 @@ function update() {
             play("hit");
             return true;
         }
-        if (isCollidingWithProjectiles || isCollidingWithHalos) {
+        if (isCollidingWithProjectiles) {
             // console.log("did")
             play("laser");
             particle(e.pos, 10)
             
-            score++;
             addScore(10,e.pos);
             return true;
         }
     });
     remove(projectiles, (pp) => {
+
+
         const isCollidingWithEnemies
             = char("d", pp.pos, { rotation: pp.rotation }).isColliding.char.c;
 
         if (isCollidingWithEnemies) {
-            // Create teleport circle
+            //make enemies disappear
 
-            teleports.push({
+            enemies.push({
                 pos: pp.pos,
                 rotation: 0.1,
                 open: true
             });
         }
-        // // If eBullet is not onscreen, remove it
+        // // If bullet is not onscreen, remove it
         if (!pp.pos.isInRect(0, 0, G.WIDTH, G.HEIGHT) || isCollidingWithEnemies) {
             // console.log("removed")
             return true;
         }
     });
+
 }
 
