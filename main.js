@@ -16,19 +16,37 @@ ll
 ll
 ll
 ll
+`,
+
+    `
+    bc
+   bbcc
+  bbwcwc
+  bbwcwc
+  bccccL
+   c  b
 `
 ];
 
 const G = {
     WIDTH: 100,
     HEIGHT: 150,
+    PLAYER_FIRE_RATE: 60,
+    PLAYER_SABER_OFFSET: 3,
     STAR_SPEED_MIN: 0.5,
-    STAR_SPEED_MAX: 1.0
+    STAR_SPEED_MAX: 1.0,
+    ENEMY_SPEED: 0.5,
+    ENEMY_GNERATE_SPEED: 100,
+    LASER_SPEED: 1,
+    ENEMY_FIRE_RATE: 60
 };
 
 options = {
     theme: "dark",
-    seed: 2,
+    seed: 10,
+    isCapturing: true,
+    isCapturingGameCanvasOnly: true,
+    captureCanvasScale: 2,
     viewSize: {x: G.WIDTH, y: G.HEIGHT},
     isPlayingBgm: true,
     isReplayEnabled: true
@@ -49,6 +67,9 @@ options = {
 /**
  * @typedef {{
     * pos: Vector,
+    * firingCooldown: number,
+    * isFiring: boolean,
+    * healthRemain: number
     * }} Player
     */
    
@@ -56,6 +77,19 @@ options = {
     * @type { Player }
     */
    let player;
+
+/**
+ * @typedef {{
+    * pos: Vector,
+    * firingCooldown: number,
+    * angle: number
+    * }} Enemy
+    */
+
+    /**
+    * @type { Enemy [] }
+    */
+   let enemies;
 
 /**
  * @typedef {{
@@ -75,6 +109,12 @@ options = {
  * @param {number} y
 **/
 
+let select;
+let side;
+let direction;
+let s;
+let laser;
+let score;
 // The game loop function
 function update() {
     if (input.isJustPressed) {
@@ -89,6 +129,18 @@ function update() {
                 speed: rnd(G.STAR_SPEED_MIN, G.STAR_SPEED_MAX)
             };
         });
+
+        enemies = [];
+        projectiles = [];
+
+        select = false;
+        laser = false;
+        s=0;
+        direction = [];
+        direction[0] = vec(rnd(0, G.WIDTH), 0); //North
+        direction[1] = vec(rnd(0, G.WIDTH), G.HEIGHT); //South
+        direction[2] = vec(0, rnd(0, G.HEIGHT)); //West
+        direction[3] = vec(G.WIDTH, rnd(0, G.HEIGHT)); //East
 	}
     stars.forEach((s) => {
         s.pos.y += s.speed;
@@ -99,13 +151,35 @@ function update() {
     });
 
     player = {
-        pos: vec(G.WIDTH * 0.5, G.HEIGHT * 0.5)
+        pos: vec(G.WIDTH * 0.5, G.HEIGHT * 0.5),
+        firingCooldown: G.PLAYER_FIRE_RATE,
+        isFiring: false,
+        healthRemain: 8
     };
         player.pos = vec(input.pos.x, input.pos.y);
         //player.pos.clamp(0, G.WIDTH, G.HEIGHT);
         color("cyan");
         //box(player.pos, 4)
         char("a", player.pos);
+
+        if (player.firingCooldown > 0) {
+            player.firingCooldown--;
+        }
+        // End Game
+        if (player.healthRemain <= 0) {
+            end("You Died");
+        }
+    
+    
+        if (!select && input.isJustPressed && player.firingCooldown == 0) {
+            //refresh cooldown
+            player.firingCooldown = G.PLAYER_FIRE_RATE;
+            projectiles.push({
+                pos: vec(player.pos.x, player.pos.y),
+                angle: player.pos.angleTo(input.pos),
+                rotation: rnd()
+            });
+        }
     
     //health bar
     color("light_red");
@@ -125,5 +199,86 @@ function update() {
     } else {
         char("a", player.pos);
     }
+
+    //create enemy
+    G.ENEMY_SPEED = rnd(0.1, 0.6);
+    G.ENEMY_GNERATE_SPEED--;
+
+    if (G.ENEMY_GNERATE_SPEED <= 0) {
+        G.ENEMY_GNERATE_SPEED = 100 / difficulty;
+        s++;
+        let theD = direction[Math.floor(rnd(0, 4))];//ALL 4 directions
+
+        enemies.push({
+            pos: vec(theD),
+            firingCooldown: G.ENEMY_FIRE_RATE,
+            angle: theD.angleTo(player.pos)
+        });
+        console.log(s);
+        if(s>=15){
+            console.log("pushed")
+            s=0;
+            laserWalls.push({
+                pos: vec(theD),
+                angle: theD.angleTo(player.pos)
+            })
+        }
+    }
+
+    projectiles.forEach((p) => {
+        // Old-fashioned trigonometry to find out the velocity on each axis
+        p.pos.x += G.PROJECTILE_SPEED * Math.cos(p.angle);
+        p.pos.y += G.PROJECTILE_SPEED * Math.sin(p.angle);
+        // The bullet also rotates around itself
+        p.rotation += 0.1;
+        char("d", p.pos);
+    });
+    remove(enemies, (e) => {
+        // console.log("here")
+        e.pos.x += G.ENEMY_SPEED * Math.cos(e.angle);
+        e.pos.y += G.ENEMY_SPEED * Math.sin(e.angle);
+        color("black");
+        const isCollidingWithHalos =
+            char("c", e.pos).isColliding.rect.light_yellow;
+        const isCollidingWithProjectiles =
+            char("c", e.pos).isColliding.char.d;
+        const isCollidingWithPlayerA =
+            char("c", e.pos).isColliding.char.a;
+        const isCollidingWithPlayerB =
+            char("c", e.pos).isColliding.char.b;
+        if (isCollidingWithPlayerA || isCollidingWithPlayerB && !input.isPressed) {
+            player.healthRemain--;
+            play("hit");
+            return true;
+        }
+        if (isCollidingWithProjectiles || isCollidingWithHalos) {
+            // console.log("did")
+            play("laser");
+            particle(e.pos, 10)
+            
+            score++;
+            addScore(10,e.pos);
+            return true;
+        }
+    });
+    remove(projectiles, (pp) => {
+        const isCollidingWithEnemies
+            = char("d", pp.pos, { rotation: pp.rotation }).isColliding.char.c;
+
+        if (isCollidingWithEnemies) {
+            // Create teleport circle
+
+            teleports.push({
+                pos: pp.pos,
+                rotation: 0.1,
+                open: true
+            });
+        }
+        // // If eBullet is not onscreen, remove it
+        if (!pp.pos.isInRect(0, 0, G.WIDTH, G.HEIGHT) || isCollidingWithEnemies) {
+            // console.log("removed")
+            return true;
+        }
+    });
 }
 
